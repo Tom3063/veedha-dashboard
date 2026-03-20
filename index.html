@@ -145,6 +145,19 @@ async function fetchDashboardData() {
     fetchAllItems(finId,   true),
   ]);
 
+  // ── Process Contacts → mapas por ID e por nome ─────────────────
+  // Tem de ser feito ANTES do Pipeline para resolver board_relation
+  const contItemMap = {};
+  contItems.forEach(item => { contItemMap[item.id] = item.name; });
+
+  const FILIAL = { "M&A": "M&A" };
+  contItems
+    .filter(item => item.group.title.trim() === "Assessores & Originadores")
+    .forEach(item => {
+      const filial = colId(item.column_values, "status0");
+      if (item.name && filial) FILIAL[item.name] = filial;
+    });
+
   // ── Process Pipeline ────────────────────────────────────────────
   const PIPE = pipeItems
     .filter(item => item.group.title.trim() !== "Em Análise")
@@ -152,12 +165,26 @@ async function fetchDashboardData() {
       const cv = item.column_values;
 
       // Fee Potencial — calculado manualmente (formula5 retorna null via API)
-      // Fórmula: (Fee de Sucesso% / 100) × EV Estimado, ÷ 0.885 se Gross Up = Sim
-      const feeSucesso = parseNum(colId(cv, "n_meros"));
-      const evEstimado = parseNum(colId(cv, "numeric"));
-      const grossUp    = colId(cv, "color_mkrw4zwh");
-      let fee = (feeSucesso / 100) * evEstimado;
+      // Fórmula: (Fee de Sucesso% / 100) × Cheque Estimado × 1.000.000, ÷ 0.885 se Gross Up = Sim
+      // Nota: Cheque Estimado (numbers) é em MM — ex: "100" = R$ 100.000.000
+      const feeSucesso     = parseNum(colId(cv, "n_meros"));         // Fee de Sucesso (%)
+      const chequeEstimado = parseNum(colId(cv, "numbers")) * 1e6;   // Cheque Estimado em BRL
+      const grossUp        = colId(cv, "color_mkrw4zwh");            // "Sim" ou "Não"
+      let fee = (feeSucesso / 100) * chequeEstimado;
       if (grossUp === "Sim" && fee > 0) fee = fee / 0.885;
+
+      // Originação — board_relation não retorna text; parsear IDs do value e resolver via contItemMap
+      let orig = "";
+      const origCol = cv.find(x => x.id === "conectar_quadros");
+      if (origCol?.value) {
+        try {
+          const parsed = JSON.parse(origCol.value);
+          const ids = parsed.linkedPulseIds
+            ? parsed.linkedPulseIds.map(x => String(x.linkedPulseId))
+            : (parsed.ids || []).map(String);
+          if (ids.length > 0) orig = contItemMap[ids[0]] || "";
+        } catch {}
+      }
 
       return {
         el:    item.name,
@@ -167,19 +194,8 @@ async function fetchDashboardData() {
         pr:    parseDate(colId(cv, "data2")),
         ep:    parseDate(colId(cv, "date")),
         ap:    parseDate(colId(cv, "date4")),
-        orig:  colId(cv, "conectar_quadros"),
+        orig,
       };
-    });
-
-  // ── Process Contacts → FILIAL map ──────────────────────────────
-  const FILIAL = { "M&A": "M&A" };
-  contItems
-    .filter(item => item.group.title.trim() === "Assessores & Originadores")
-    .forEach(item => {
-      const cv = item.column_values;
-      const contato = item.name;                     // Nome é o item.name (coluna "name")
-      const filial  = colId(cv, "status0");          // Filial
-      if (contato && filial) FILIAL[contato] = filial;
     });
 
   // ── Process Financial subitems ──────────────────────────────────
@@ -393,12 +409,15 @@ function Dashboard(){
 
   // ── G1 Funil ────────────────────────────────────────────────────
   const valid = p => p.etapa !== "Em Análise";
+  // mês seleccionado
   const leadsM = PIPE.filter(p=>valid(p)&&mmy(p.pr,mo,yr)).length;
   const propoM = PIPE.filter(p=>valid(p)&&mmy(p.ep,mo,yr)).length;
   const mandM  = PIPE.filter(p=>valid(p)&&mmy(p.ap,mo,yr)).length;
-  const leadsY = PIPE.filter(p=>valid(p)&&my(p.pr,yr)).length;
-  const propoY = PIPE.filter(p=>valid(p)&&my(p.ep,yr)).length;
-  const mandY  = PIPE.filter(p=>valid(p)&&my(p.ap,yr)).length;
+  // acumulado Jan → mês seleccionado (para os donuts de Meta Anual)
+  const uptomo = (d) => { if(!d) return false; const dt=new Date(d); return dt.getFullYear()===yr && dt.getMonth()+1<=mo; };
+  const leadsY = PIPE.filter(p=>valid(p)&&uptomo(p.pr)).length;
+  const propoY = PIPE.filter(p=>valid(p)&&uptomo(p.ep)).length;
+  const mandY  = PIPE.filter(p=>valid(p)&&uptomo(p.ap)).length;
 
   // ── G2 KPIs Leads ───────────────────────────────────────────────
   const leadsYr = PIPE.filter(p=>valid(p)&&my(p.pr,yr));
@@ -588,7 +607,7 @@ function Dashboard(){
                 <Tooltip formatter={v=>[`R$ ${fBRL(v)}K`,"Fee Potencial"]} contentStyle={TTS}/>
                 <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={30}>
                   <LabelList dataKey="v" position="top" formatter={v=>fBRL(v)}
-                    style={{fontSize:7,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                    style={{fontSize:8,fontFamily:"Montserrat",fill:T.dkGray}}/>
                   {g3Data.map((d,i)=><Cell key={i} fill={d.prio==="__total__"?T.lime:(PRIO_C[d.prio]||T.gray)}/>)}
                 </Bar>
               </BarChart>
@@ -614,7 +633,7 @@ function Dashboard(){
                     <Tooltip formatter={v=>[v,"Leads"]} contentStyle={TTS}/>
                     <Bar dataKey="v" fill={T.primary} radius={[0,4,4,0]} maxBarSize={18}>
                       <LabelList dataKey="v" position="right"
-                        style={{fontSize:11,fontFamily:"Montserrat",fill:T.dkGray,fontWeight:700}}/>
+                        style={{fontSize:12,fontFamily:"Montserrat",fill:T.dkGray,fontWeight:700}}/>
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -634,7 +653,7 @@ function Dashboard(){
                     <Tooltip formatter={v=>[v,"Leads"]} contentStyle={TTS}/>
                     <Bar dataKey="v" fill={T.blue} radius={[0,4,4,0]} maxBarSize={18}>
                       <LabelList dataKey="v" position="right"
-                        style={{fontSize:11,fontFamily:"Montserrat",fill:T.dkGray,fontWeight:700}}/>
+                        style={{fontSize:12,fontFamily:"Montserrat",fill:T.dkGray,fontWeight:700}}/>
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -658,7 +677,7 @@ function Dashboard(){
                 contentStyle={TTS}/>
               <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={34}>
                 <LabelList dataKey="v" position="top" formatter={v=>v>0?fBRL(v):""}
-                  style={{fontSize:7,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                  style={{fontSize:8,fontFamily:"Montserrat",fill:T.dkGray}}/>
                 {g4Data.map((d,i)=><Cell key={i} fill={barC(d.tipo)}/>)}
               </Bar>
             </BarChart>
@@ -685,7 +704,7 @@ function Dashboard(){
               <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={42}
                 onClick={d=>{ if(d&&d.fase!=="__total__") setSelPhase(selPhase===d.origName?null:d.origName); }}>
                 <LabelList dataKey="v" position="top" formatter={v=>fBRL(v)}
-                  style={{fontSize:7,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                  style={{fontSize:8,fontFamily:"Montserrat",fill:T.dkGray}}/>
                 {g5Data.map((d,i)=>(
                   <Cell key={i} fill={d.fase==="__total__"?T.lime:(PHASE_C[d.fase]||T.gray)}
                     cursor={d.fase!=="__total__"?"pointer":"default"}
