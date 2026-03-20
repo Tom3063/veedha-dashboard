@@ -40,7 +40,7 @@ const MONDAY_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzNTc4OTM5MywiYWFpIjoxMSw
 //   Envio Proposta     → id: "date"
 //   Assinatura Proposta→ id: "date4"
 //   Prioridade         → id: "status9"
-//   Fee Potencial      → calculado: (n_meros/100 * numeric) / (grossUp=Sim ? 0.885 : 1)
+//   Fee Potencial      → calculado: (n_meros/100 * numeric) / (grossUp=Sim ? 0.8885 : 1)
 //     n_meros          → Fee de Sucesso (%)
 //     numeric          → EV Estimado
 //     color_mkrw4zwh   → Gross Up? ("Sim"/"Não")
@@ -168,13 +168,13 @@ async function fetchDashboardData() {
       const cv = item.column_values;
 
       // Fee Potencial — calculado manualmente (formula5 retorna null via API)
-      // Fórmula: (Fee de Sucesso% / 100) × Cheque Estimado × 1.000.000, ÷ 0.885 se Gross Up = Sim
+      // Fórmula: (Fee de Sucesso% / 100) × Cheque Estimado × 1.000.000, ÷ 0.8885 se Gross Up = Sim
       // Nota: Cheque Estimado (numbers) é em MM — ex: "100" = R$ 100.000.000
       const feeSucesso     = parseNum(colId(cv, "n_meros"));         // Fee de Sucesso (%)
       const chequeEstimado = parseNum(colId(cv, "numbers")) * 1e6;   // Cheque Estimado em BRL
       const grossUp        = colId(cv, "color_mkrw4zwh");            // "Sim" ou "Não"
       let fee = (feeSucesso / 100) * chequeEstimado;
-      if (grossUp === "Sim" && fee > 0) fee = fee / 0.885;
+      if (grossUp === "Sim" && fee > 0) fee = fee / 0.8885;
 
       // Originação — usar linked_items do inline fragment BoardRelationValue
       let orig = "";
