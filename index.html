@@ -238,7 +238,7 @@ const TTS = { fontFamily:"Montserrat", fontSize:10, borderRadius:8 };
 const mmy = (d,m,y) => { if(!d) return false; const dt=new Date(d); return dt.getFullYear()===y&&dt.getMonth()+1===m; };
 const my  = (d,y)   => { if(!d) return false; return new Date(d).getFullYear()===y; };
 const fBRL  = n => n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const fAxis = n => n>=1 ? n.toLocaleString("pt-BR",{maximumFractionDigits:0})+"K" : "0";
+const fAxis = n => n>=1 ? n.toLocaleString("pt-BR",{maximumFractionDigits:0}) : "0";
 
 // ── UI Components ─────────────────────────────────────────────────────────────
 
@@ -586,13 +586,13 @@ function Dashboard(){
                 <div key={pr} style={{display:"flex",alignItems:"center",gap:5}}>
                   <div style={{width:7,height:7,borderRadius:2,background:PRIO_C[pr]}}/>
                   <span style={{fontSize:9,fontWeight:700,color:PRIO_C[pr]}}>{pr}:</span>
-                  <span style={{fontSize:9,color:T.muted}}>R${fBRL(tot/1000)}K</span>
+                  <span style={{fontSize:9,color:T.muted}}>R${fBRL(tot/1000)}</span>
                   <span style={{fontSize:8,color:T.muted,background:"#E5E7EB",borderRadius:10,
                     padding:"1px 5px",fontWeight:600}}>{pct}%</span>
                 </div>
               ))}
               <span style={{marginLeft:"auto",fontSize:9,fontWeight:700,color:T.txt}}>
-                Total: R${fBRL(totProp/1000)}K
+                Total: R${fBRL(totProp/1000)}
               </span>
             </div>
             <ResponsiveContainer width="100%" height={185}>
@@ -601,10 +601,10 @@ function Dashboard(){
                 <XAxis dataKey="name" tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}}
                   angle={-40} textAnchor="end" interval={0} height={52}/>
                 <YAxis tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
-                <Tooltip formatter={v=>[`R$ ${fBRL(v)}K`,"Fee Potencial"]} contentStyle={TTS}/>
+                <Tooltip formatter={v=>[`R$ ${fBRL(v)}`,"Fee Potencial"]} contentStyle={TTS}/>
                 <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={30}>
                   <LabelList dataKey="v" position="top" formatter={v=>fBRL(v)}
-                    style={{fontSize:8,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                    style={{fontSize:10,fontFamily:"Montserrat",fill:T.dkGray}}/>
                   {g3Data.map((d,i)=><Cell key={i} fill={d.prio==="__total__"?T.lime:(PRIO_C[d.prio]||T.gray)}/>)}
                 </Bar>
               </BarChart>
@@ -667,14 +667,14 @@ function Dashboard(){
               <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false}/>
               <XAxis dataKey="name" tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}}/>
               <YAxis tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
-              <Tooltip formatter={(v,_,p)=>[`R$ ${fBRL(v)}K`,
+              <Tooltip formatter={(v,_,p)=>[`R$ ${fBRL(v)}`,
                 p.payload.tipo==="anterior"?`Total ${yr-1}`:
                 p.payload.tipo==="faturada"?"Faturada":
                 p.payload.tipo==="contratada"?"Contratada":"Total Acum."]}
                 contentStyle={TTS}/>
               <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={34}>
                 <LabelList dataKey="v" position="top" formatter={v=>v>0?fBRL(v):""}
-                  style={{fontSize:8,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                  style={{fontSize:10,fontFamily:"Montserrat",fill:T.dkGray}}/>
                 {g4Data.map((d,i)=><Cell key={i} fill={barC(d.tipo)}/>)}
               </Bar>
             </BarChart>
@@ -695,13 +695,13 @@ function Dashboard(){
               <XAxis dataKey="name" tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}}
                 angle={-35} textAnchor="end" interval={0} height={52}/>
               <YAxis tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
-              <Tooltip formatter={(v,_,p)=>[`R$ ${fBRL(v)}K`,
+              <Tooltip formatter={(v,_,p)=>[`R$ ${fBRL(v)}`,
                 p.payload.fase==="__total__"?"Total Potencial":p.payload.fase]}
                 contentStyle={TTS}/>
               <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={42}
                 onClick={d=>{ if(d&&d.fase!=="__total__") setSelPhase(selPhase===d.origName?null:d.origName); }}>
                 <LabelList dataKey="v" position="top" formatter={v=>fBRL(v)}
-                  style={{fontSize:8,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                  style={{fontSize:10,fontFamily:"Montserrat",fill:T.dkGray}}/>
                 {g5Data.map((d,i)=>(
                   <Cell key={i} fill={d.fase==="__total__"?T.lime:(PHASE_C[d.fase]||T.gray)}
                     cursor={d.fase!=="__total__"?"pointer":"default"}
