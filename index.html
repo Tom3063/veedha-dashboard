@@ -26,6 +26,31 @@
 const MONDAY_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzNTc4OTM5MywiYWFpIjoxMSwidWlkIjo0OTU2ODIxMywiaWFkIjoiMjAyNi0wMy0yMFQxNjowMDo1Ni43NzVaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY1NDUwNTIsInJnbiI6InVzZTEifQ.OPa3ZOEvtmdGx-PPB4DV8JiYE14SADMiPwCi1aeGK4Q";
 // ════════════════════════════════════════════════════════════════════
 
+// ── Board IDs (hardcoded para fiabilidade) ────────────────────────
+// Pipeline        → 4323912801
+// Lista Contatos  → 4323912861
+// Ctrl Financeiro → 4345259523
+// ─────────────────────────────────────────────────────────────────
+
+// ── Mapeamento real de colunas (verificado via console) ───────────
+// PIPELINE:
+//   Etapa              → id: "status"
+//   Originação         → id: "conectar_quadros"
+//   Primeira Reunião   → id: "data2"
+//   Envio Proposta     → id: "date"
+//   Assinatura Proposta→ id: "date4"
+//   Prioridade         → id: "status9"
+//   Fee Potencial      → id: "formula5"
+// LISTA DE CONTATOS:
+//   Nome/Contato       → item.name  (coluna "name", tipo name)
+//   Filial             → id: "status0"
+// CONTROLE FINANCEIRO:
+//   Board tem apenas 5 colunas (name, subelementos, status0, board_relation, espelho)
+//   Colunas financeiras (Valor Bruto, Data Pagamento, Data Emissão) estão nos
+//   subitems — IDs a confirmar quando o board estiver preenchido.
+//   Por ora retornam 0 de forma silenciosa.
+// ─────────────────────────────────────────────────────────────────
+
 const { useState, useEffect, useCallback } = React;
 const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
         ResponsiveContainer, Cell, LabelList } = Recharts;
@@ -77,14 +102,15 @@ async function fetchAllItems(boardId, withSubitems = false) {
   return items;
 }
 
-function colText(cv, title) {
-  const c = cv.find(x => x.title === title);
+// ── Helpers de coluna ─────────────────────────────────────────────
+// IMPORTANTE: usar colId (por ID) — a query não devolve o campo "title"
+function colId(cv, id) {
+  const c = cv.find(x => x.id === id);
   return c ? (c.text || "").trim() : "";
 }
 
 function parseDate(t) {
   if (!t || !t.trim()) return null;
-  // Monday date columns: text is "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
   return t.trim().slice(0, 10);
 }
 
@@ -95,22 +121,12 @@ function parseNum(t) {
 }
 
 async function fetchDashboardData() {
-  // Step 1 — discover board IDs
-  const boardsData = await mondayFetch(`query {
-    boards(limit: 200, order_by: created_at) { id name }
-  }`);
+  // Board IDs fixos — evita falhas na descoberta por nome
+  const pipeId = "4323912801";
+  const contId = "4323912861";
+  const finId  = "4345259523";
 
-  const find = name => {
-    const b = boardsData.boards.find(b => b.name.trim() === name);
-    if (!b) throw new Error(`Board "${name}" não encontrado. Verifique o nome exato no Monday.`);
-    return b.id;
-  };
-
-  const pipeId   = find("Pipeline");
-  const contId   = find("Lista de Contatos");
-  const finId    = find("Controle Financeiro");
-
-  // Step 2 — fetch all three boards in parallel
+  // Fetch paralelo dos três boards
   const [pipeItems, contItems, finItems] = await Promise.all([
     fetchAllItems(pipeId,  false),
     fetchAllItems(contId,  false),
@@ -123,14 +139,14 @@ async function fetchDashboardData() {
     .map(item => {
       const cv = item.column_values;
       return {
-        el:   item.name,
-        etapa: colText(cv, "Etapa"),
-        fee:   parseNum(colText(cv, "Fee Potencial")),
-        prio:  colText(cv, "Prioridade") || null,
-        pr:    parseDate(colText(cv, "Primeira Reunião")),
-        ep:    parseDate(colText(cv, "Envio Proposta")),
-        ap:    parseDate(colText(cv, "Assinatura Proposta")),
-        orig:  colText(cv, "Originação"),
+        el:    item.name,
+        etapa: colId(cv, "status"),                  // Etapa
+        fee:   parseNum(colId(cv, "formula5")),      // Fee Potencial
+        prio:  colId(cv, "status9") || null,         // Prioridade
+        pr:    parseDate(colId(cv, "data2")),         // Primeira Reunião
+        ep:    parseDate(colId(cv, "date")),          // Envio Proposta
+        ap:    parseDate(colId(cv, "date4")),         // Assinatura Proposta
+        orig:  colId(cv, "conectar_quadros"),         // Originação (board_relation → text = nome)
       };
     });
 
@@ -140,21 +156,28 @@ async function fetchDashboardData() {
     .filter(item => item.group.title.trim() === "Assessores & Originadores")
     .forEach(item => {
       const cv = item.column_values;
-      const contato = colText(cv, "Contato") || item.name;
-      const filial  = colText(cv, "Filial");
+      const contato = item.name;                     // Nome é o item.name (coluna "name")
+      const filial  = colId(cv, "status0");          // Filial
       if (contato && filial) FILIAL[contato] = filial;
     });
 
   // ── Process Financial subitems ──────────────────────────────────
+  // Nota: as colunas financeiras estão nos subitems do Controle Financeiro.
+  // Os IDs abaixo ("numbers", "date", "date4") são estimativas — ajustar
+  // quando o board estiver preenchido e os IDs reais forem confirmados.
   const finSubitems = [];
   finItems.forEach(item => {
     (item.subitems || []).forEach(sub => {
       const cv = sub.column_values;
-      finSubitems.push({
-        valorBruto:     parseNum(colText(cv, "Valor Bruto")),
-        dataPagamento:  parseDate(colText(cv, "Data de Pagamento")),
-        dataEmissao:    parseDate(colText(cv, "Data de Emissão")),
-      });
+      // Tentar IDs comuns; retorna 0/null se não existirem (seguro)
+      const valorBruto    = parseNum(colId(cv, "numbers"))   ||
+                            parseNum(colId(cv, "n_meros"))    ||
+                            parseNum(colId(cv, "numeric"));
+      const dataPagamento = parseDate(colId(cv, "date"))     ||
+                            parseDate(colId(cv, "date0"));
+      const dataEmissao   = parseDate(colId(cv, "date4"))    ||
+                            parseDate(colId(cv, "date3"));
+      finSubitems.push({ valorBruto, dataPagamento, dataEmissao });
     });
   });
 
