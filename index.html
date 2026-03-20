@@ -52,7 +52,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
   const items = [];
   let cursor = null;
   const subFrag = withSubitems
-    ? `subitems { id name column_values { id title text value } }`
+    ? `subitems { id name column_values { id text value type } }`
     : "";
   do {
     const cursorArg = cursor ? `, cursor: "${cursor}"` : "";
@@ -62,8 +62,8 @@ async function fetchAllItems(boardId, withSubitems = false) {
           cursor
           items {
             id name
-            group { id title }
-            column_values { id title text value }
+            group { id name }
+            column_values { id text value type }
             ${subFrag}
           }
         }
