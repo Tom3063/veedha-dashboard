@@ -62,7 +62,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
           cursor
           items {
             id name
-            group { id name }
+            group { id title }
             column_values { id text value type }
             ${subFrag}
           }
