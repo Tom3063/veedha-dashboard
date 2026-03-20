@@ -450,25 +450,26 @@ function Dashboard(){
   // ── G4 Receita Faturada/Contratada ─────────────────────────────
   const finKv = (sub, dateField) => sub[dateField] && new Date(sub[dateField]).getFullYear();
   const finKm = (sub, dateField) => sub[dateField] && new Date(sub[dateField]).getMonth()+1;
+  // Filtro: Faturada = dataEmissao <= mês do filtro (no ano seleccionado)
+  //         Contratada = dataEmissao > mês do filtro
+  // Total ano anterior = dataEmissao no ano anterior
   const prevTotal = finSubitems
-    .filter(s=>s.dataPagamento&&finKv(s,"dataPagamento")===yr-1)
+    .filter(s=>s.dataEmissao&&finKv(s,"dataEmissao")===yr-1)
     .reduce((a,s)=>a+s.valorBruto,0)/1000;
   const monthlyFin = MOS.map((_,i)=>{
     const m=i+1;
-    if(m<=mo){
-      return finSubitems
-        .filter(s=>s.dataPagamento&&finKv(s,"dataPagamento")===yr&&finKm(s,"dataPagamento")===m)
-        .reduce((a,s)=>a+s.valorBruto,0)/1000;
-    } else {
-      return finSubitems
-        .filter(s=>s.dataEmissao&&finKv(s,"dataEmissao")===yr&&finKm(s,"dataEmissao")===m)
-        .reduce((a,s)=>a+s.valorBruto,0)/1000;
-    }
+    return finSubitems
+      .filter(s=>s.dataEmissao&&finKv(s,"dataEmissao")===yr&&finKm(s,"dataEmissao")===m)
+      .reduce((a,s)=>a+s.valorBruto,0)/1000;
   });
   const yearTotal = monthlyFin.reduce((a,v)=>a+v,0);
   const g4Data = [
     {name:`Total ${yr-1}`,v:+prevTotal.toFixed(2),tipo:"anterior"},
-    ...MOS.map((mn,i)=>({name:`${mn.toLowerCase()}-${String(yr).slice(2)}`,v:+monthlyFin[i].toFixed(2),tipo:i+1<=mo?"faturada":"contratada"})),
+    ...MOS.map((mn,i)=>({
+      name:`${mn.toLowerCase()}-${String(yr).slice(2)}`,
+      v:+monthlyFin[i].toFixed(2),
+      tipo: i+1<=mo ? "faturada" : "contratada"  // Emissão <= filtro = Faturada; > filtro = Contratada
+    })),
     {name:"Total Acum.",v:+yearTotal.toFixed(2),tipo:"totalAno"},
   ];
   const barC = t => t==="anterior"?T.gray:t==="faturada"?T.primary:t==="contratada"?T.blue:T.lime;
