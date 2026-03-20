@@ -79,12 +79,34 @@ async function fetchAllItems(boardId, withSubitems = false) {
   const subFrag = withSubitems
     ? `subitems { id name column_values { id text value type } }`
     : "";
-  const apiVersion = withSubitems ? "2023-10" : "2023-10";
+
+  const doFetch = async (q, attempt=0) => {
+    const resp = await fetch("https://api.monday.com/v2", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": MONDAY_API_KEY,
+        "API-Version": "2023-10",
+      },
+      body: JSON.stringify({ query: q }),
+    });
+    if (resp.status === 429) {
+      if (attempt >= 4) throw new Error("Rate limit excedido. Aguarde 1 minuto e tente novamente.");
+      const wait = (attempt + 1) * 3000; // 3s, 6s, 9s, 12s
+      await new Promise(r => setTimeout(r, wait));
+      return doFetch(q, attempt + 1);
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    const json = await resp.json();
+    if (json.errors) throw new Error(json.errors.map(e => e.message).join("; "));
+    return json;
+  };
+
   do {
     const cursorArg = cursor ? `, cursor: "${cursor}"` : "";
     const q = `query {
       boards(ids: [${boardId}]) {
-        items_page(limit: 500${cursorArg}) {
+        items_page(limit: 200${cursorArg}) {
           cursor
           items {
             id name
@@ -98,21 +120,12 @@ async function fetchAllItems(boardId, withSubitems = false) {
         }
       }
     }`;
-    const resp = await fetch("https://api.monday.com/v2", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": MONDAY_API_KEY,
-        "API-Version": apiVersion,
-      },
-      body: JSON.stringify({ query: q }),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-    const json = await resp.json();
-    if (json.errors) throw new Error(json.errors.map(e => e.message).join("; "));
+    const json = await doFetch(q);
     const page = json.data.boards[0].items_page;
     items.push(...page.items);
     cursor = page.cursor || null;
+    // Pequena pausa entre páginas para evitar rate limit
+    if (cursor) await new Promise(r => setTimeout(r, 500));
   } while (cursor);
   return items;
 }
@@ -141,12 +154,12 @@ async function fetchDashboardData() {
   const contId = "4323912861";
   const finId  = "4388355289"; // Board real do Controle Financeiro
 
-  // Fetch paralelo dos três boards
-  const [pipeItems, contItems, finItems] = await Promise.all([
-    fetchAllItems(pipeId,  false),
-    fetchAllItems(contId,  false),
-    fetchAllItems(finId,   true),
-  ]);
+  // Fetch sequencial para evitar rate limit (429)
+  const pipeItems = await fetchAllItems(pipeId, false);
+  await new Promise(r => setTimeout(r, 500));
+  const contItems = await fetchAllItems(contId, false);
+  await new Promise(r => setTimeout(r, 500));
+  const finItems  = await fetchAllItems(finId,  true);
 
   // ── Process Contacts → mapas por ID e por nome ─────────────────
   // Tem de ser feito ANTES do Pipeline para resolver board_relation
