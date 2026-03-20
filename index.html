@@ -79,7 +79,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
   const subFrag = withSubitems
     ? `subitems { id name column_values { id text value type } }`
     : "";
-  const apiVersion = withSubitems ? "2023-10" : "2024-01";
+  const apiVersion = withSubitems ? "2023-10" : "2023-10";
   do {
     const cursorArg = cursor ? `, cursor: "${cursor}"` : "";
     const q = `query {
@@ -89,7 +89,10 @@ async function fetchAllItems(boardId, withSubitems = false) {
           items {
             id name
             group { id title }
-            column_values { id text value type }
+            column_values {
+              id text value type
+              ... on BoardRelationValue { linked_items { id name } }
+            }
             ${subFrag}
           }
         }
@@ -173,17 +176,11 @@ async function fetchDashboardData() {
       let fee = (feeSucesso / 100) * chequeEstimado;
       if (grossUp === "Sim" && fee > 0) fee = fee / 0.885;
 
-      // Originação — board_relation não retorna text; parsear IDs do value e resolver via contItemMap
+      // Originação — usar linked_items do inline fragment BoardRelationValue
       let orig = "";
       const origCol = cv.find(x => x.id === "conectar_quadros");
-      if (origCol?.value) {
-        try {
-          const parsed = JSON.parse(origCol.value);
-          const ids = parsed.linkedPulseIds
-            ? parsed.linkedPulseIds.map(x => String(x.linkedPulseId))
-            : (parsed.ids || []).map(String);
-          if (ids.length > 0) orig = contItemMap[ids[0]] || "";
-        } catch {}
+      if (origCol?.linked_items?.length > 0) {
+        orig = origCol.linked_items[0].name || "";
       }
 
       return {
