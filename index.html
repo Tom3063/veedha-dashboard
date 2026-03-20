@@ -35,20 +35,20 @@ const MONDAY_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzNTc4OTM5MywiYWFpIjoxMSw
 // ── Mapeamento real de colunas (verificado via console) ───────────
 // PIPELINE:
 //   Etapa              → id: "status"
-//   Originação         → id: "conectar_quadros"
+//   Originação         → id: "conectar_quadros"  (board_relation, text=null via API)
 //   Primeira Reunião   → id: "data2"
 //   Envio Proposta     → id: "date"
 //   Assinatura Proposta→ id: "date4"
 //   Prioridade         → id: "status9"
-//   Fee Potencial      → id: "formula5"
+//   Fee Potencial      → calculado: (n_meros/100 * numeric) / (grossUp=Sim ? 0.885 : 1)
+//     n_meros          → Fee de Sucesso (%)
+//     numeric          → EV Estimado
+//     color_mkrw4zwh   → Gross Up? ("Sim"/"Não")
 // LISTA DE CONTATOS:
-//   Nome/Contato       → item.name  (coluna "name", tipo name)
+//   Nome/Contato       → item.name
 //   Filial             → id: "status0"
 // CONTROLE FINANCEIRO:
-//   Board tem apenas 5 colunas (name, subelementos, status0, board_relation, espelho)
-//   Colunas financeiras (Valor Bruto, Data Pagamento, Data Emissão) estão nos
-//   subitems — IDs a confirmar quando o board estiver preenchido.
-//   Por ora retornam 0 de forma silenciosa.
+//   Subitems a confirmar quando board estiver preenchido.
 // ─────────────────────────────────────────────────────────────────
 
 const { useState, useEffect, useCallback } = React;
@@ -79,6 +79,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
   const subFrag = withSubitems
     ? `subitems { id name column_values { id text value type } }`
     : "";
+  const apiVersion = withSubitems ? "2023-10" : "2024-01";
   do {
     const cursorArg = cursor ? `, cursor: "${cursor}"` : "";
     const q = `query {
@@ -94,8 +95,19 @@ async function fetchAllItems(boardId, withSubitems = false) {
         }
       }
     }`;
-    const data = await mondayFetch(q);
-    const page = data.boards[0].items_page;
+    const resp = await fetch("https://api.monday.com/v2", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": MONDAY_API_KEY,
+        "API-Version": apiVersion,
+      },
+      body: JSON.stringify({ query: q }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+    const json = await resp.json();
+    if (json.errors) throw new Error(json.errors.map(e => e.message).join("; "));
+    const page = json.data.boards[0].items_page;
     items.push(...page.items);
     cursor = page.cursor || null;
   } while (cursor);
@@ -124,7 +136,7 @@ async function fetchDashboardData() {
   // Board IDs fixos — evita falhas na descoberta por nome
   const pipeId = "4323912801";
   const contId = "4323912861";
-  const finId  = "4345259523";
+  const finId  = "4388355289"; // Board real do Controle Financeiro
 
   // Fetch paralelo dos três boards
   const [pipeItems, contItems, finItems] = await Promise.all([
@@ -138,15 +150,24 @@ async function fetchDashboardData() {
     .filter(item => item.group.title.trim() !== "Em Análise")
     .map(item => {
       const cv = item.column_values;
+
+      // Fee Potencial — calculado manualmente (formula5 retorna null via API)
+      // Fórmula: (Fee de Sucesso% / 100) × EV Estimado, ÷ 0.885 se Gross Up = Sim
+      const feeSucesso = parseNum(colId(cv, "n_meros"));
+      const evEstimado = parseNum(colId(cv, "numeric"));
+      const grossUp    = colId(cv, "color_mkrw4zwh");
+      let fee = (feeSucesso / 100) * evEstimado;
+      if (grossUp === "Sim" && fee > 0) fee = fee / 0.885;
+
       return {
         el:    item.name,
-        etapa: colId(cv, "status"),                  // Etapa
-        fee:   parseNum(colId(cv, "formula5")),      // Fee Potencial
-        prio:  colId(cv, "status9") || null,         // Prioridade
-        pr:    parseDate(colId(cv, "data2")),         // Primeira Reunião
-        ep:    parseDate(colId(cv, "date")),          // Envio Proposta
-        ap:    parseDate(colId(cv, "date4")),         // Assinatura Proposta
-        orig:  colId(cv, "conectar_quadros"),         // Originação (board_relation → text = nome)
+        etapa: colId(cv, "status"),
+        fee:   Math.round(fee * 100) / 100,
+        prio:  colId(cv, "status9") || null,
+        pr:    parseDate(colId(cv, "data2")),
+        ep:    parseDate(colId(cv, "date")),
+        ap:    parseDate(colId(cv, "date4")),
+        orig:  colId(cv, "conectar_quadros"),
       };
     });
 
@@ -162,22 +183,20 @@ async function fetchDashboardData() {
     });
 
   // ── Process Financial subitems ──────────────────────────────────
-  // Nota: as colunas financeiras estão nos subitems do Controle Financeiro.
-  // Os IDs abaixo ("numbers", "date", "date4") são estimativas — ajustar
-  // quando o board estiver preenchido e os IDs reais forem confirmados.
+  // Board: 4388355289 | Subitems verificados via console (Parcela 1 do Proj. Egito)
+  // n_meros  → Valor Bruto
+  // data8    → Data de Pagamento
+  // date1    → Data de Emissão
   const finSubitems = [];
   finItems.forEach(item => {
     (item.subitems || []).forEach(sub => {
       const cv = sub.column_values;
-      // Tentar IDs comuns; retorna 0/null se não existirem (seguro)
-      const valorBruto    = parseNum(colId(cv, "numbers"))   ||
-                            parseNum(colId(cv, "n_meros"))    ||
-                            parseNum(colId(cv, "numeric"));
-      const dataPagamento = parseDate(colId(cv, "date"))     ||
-                            parseDate(colId(cv, "date0"));
-      const dataEmissao   = parseDate(colId(cv, "date4"))    ||
-                            parseDate(colId(cv, "date3"));
-      finSubitems.push({ valorBruto, dataPagamento, dataEmissao });
+      const valorBruto    = parseNum(colId(cv, "n_meros"));
+      const dataPagamento = parseDate(colId(cv, "data8"));
+      const dataEmissao   = parseDate(colId(cv, "date1"));
+      if (valorBruto > 0) {
+        finSubitems.push({ valorBruto, dataPagamento, dataEmissao });
+      }
     });
   });
 
@@ -385,9 +404,12 @@ function Dashboard(){
   const leadsYr = PIPE.filter(p=>valid(p)&&my(p.pr,yr));
   const byOrig={}, byFil={};
   leadsYr.forEach(p=>{
-    byOrig[p.orig]=(byOrig[p.orig]||0)+1;
-    const f = p.orig==="M&A" ? "M&A" : (FILIAL[p.orig]||p.orig);
-    byFil[f]=(byFil[f]||0)+1;
+    const origKey = p.orig || null;
+    if (origKey) byOrig[origKey]=(byOrig[origKey]||0)+1;
+    if (p.orig) {
+      const f = p.orig==="M&A" ? "M&A" : (FILIAL[p.orig]||p.orig);
+      byFil[f]=(byFil[f]||0)+1;
+    }
   });
   const topOrig = Object.entries(byOrig).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,v])=>({n,v}));
   const topFil  = Object.entries(byFil).sort((a,b)=>b[1]-a[1]).map(([n,v])=>({n,v}));
