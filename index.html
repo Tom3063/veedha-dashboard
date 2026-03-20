@@ -270,12 +270,12 @@ const Lgd = ({items}) => (
 );
 
 function Donut({value,max,color,editing,id,onChange}){
-  const R=27,circ=2*Math.PI*R,off=circ*(1-Math.min(value/Math.max(max,1),1));
+  const R=32,circ=2*Math.PI*R,off=circ*(1-Math.min(value/Math.max(max,1),1));
   return (
-    <div style={{flexShrink:0,width:60,height:60,position:"relative"}}>
-      <svg width={60} height={60} viewBox="0 0 60 60" style={{transform:"rotate(-90deg)"}}>
-        <circle cx={30} cy={30} r={R} fill="none" stroke="#E5EAF0" strokeWidth={6}/>
-        <circle cx={30} cy={30} r={R} fill="none" stroke={color} strokeWidth={6}
+    <div style={{flexShrink:0,width:72,height:72,position:"relative"}}>
+      <svg width={72} height={72} viewBox="0 0 72 72" style={{transform:"rotate(-90deg)"}}>
+        <circle cx={36} cy={36} r={R} fill="none" stroke="#E5EAF0" strokeWidth={6}/>
+        <circle cx={36} cy={36} r={R} fill="none" stroke={color} strokeWidth={6}
           strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round"
           style={{transition:"stroke-dashoffset .4s ease"}}/>
       </svg>
@@ -283,9 +283,9 @@ function Donut({value,max,color,editing,id,onChange}){
         textAlign:"center",lineHeight:1.1}}>
         {editing
           ? <input type="number" value={max} onChange={e=>onChange(id,+e.target.value)}
-              style={{width:32,textAlign:"center",fontFamily:"Montserrat",fontSize:8,fontWeight:700,
+              style={{width:36,textAlign:"center",fontFamily:"Montserrat",fontSize:9,fontWeight:700,
                 border:`1.5px solid ${color}`,borderRadius:3,color:color,padding:"1px 0",background:"white"}}/>
-          : <span style={{fontSize:8,fontWeight:700,color:T.txt}}>
+          : <span style={{fontSize:10,fontWeight:700,color:T.txt}}>
               {value}<span style={{color:T.muted,fontWeight:500}}>/{max}</span>
             </span>
         }
@@ -380,8 +380,12 @@ function Dashboard(){
   const [selPhase, setSelPhase] = useState(null);
   const [g3Labels, setG3Labels] = useState(()=>lsGet("vds_g3labels",{}));
   const [g5Labels, setG5Labels] = useState(()=>lsGet("vds_g5labels",{}));
-  const [editG3,   setEditG3]   = useState(false);
-  const [editG5,   setEditG5]   = useState(false);
+  const [g3Hidden, setG3Hidden] = useState(()=>lsGet("vds_g3hidden",[]));
+  const [g5Hidden, setG5Hidden] = useState(()=>lsGet("vds_g5hidden",[]));
+  const [editG3,      setEditG3]      = useState(false);
+  const [editG5,      setEditG5]      = useState(false);
+  const [editG3Filter,setEditG3Filter]= useState(false);
+  const [editG5Filter,setEditG5Filter]= useState(false);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(null);
   const [apiData,  setApiData]  = useState(null);
@@ -390,6 +394,8 @@ function Dashboard(){
   useEffect(()=>lsSet("vds_phases", phases),  [phases]);
   useEffect(()=>lsSet("vds_g3labels",g3Labels),[g3Labels]);
   useEffect(()=>lsSet("vds_g5labels",g5Labels),[g5Labels]);
+  useEffect(()=>lsSet("vds_g3hidden",g3Hidden),[g3Hidden]);
+  useEffect(()=>lsSet("vds_g5hidden",g5Hidden),[g5Hidden]);
 
   const loadData = useCallback(async ()=>{
     setLoading(true); setError(null);
@@ -431,7 +437,8 @@ function Dashboard(){
   const topFil  = Object.entries(byFil).sort((a,b)=>b[1]-a[1]).map(([n,v])=>({n,v}));
 
   // ── G3 Valor por Proposta (sem filtro de data) ──────────────────
-  const propItems = PIPE.filter(p=>p.etapa==="Proposta"&&p.fee>0);
+  const propItems = PIPE.filter(p=>p.etapa==="Proposta"&&p.fee>0&&!g3Hidden.includes(p.el));
+  const propAll   = PIPE.filter(p=>p.etapa==="Proposta"&&p.fee>0); // para toggle list
   const totProp   = propItems.reduce((s,p)=>s+p.fee,0);
   const g3Grp     = {Alta:[],Média:[],Baixa:[]};
   propItems.forEach(p=>g3Grp[p.prio]?.push(p));
@@ -445,7 +452,7 @@ function Dashboard(){
     const tot=g3Grp[pr].reduce((s,p)=>s+p.fee,0);
     return{pr,tot,pct:totProp>0?((tot/totProp)*100).toFixed(1):"0"};
   });
-  const g3Orig = propItems.map(p=>p.el);
+  const g3Orig = propAll.map(p=>p.el);
 
   // ── G4 Receita Faturada/Contratada ─────────────────────────────
   const finKv = (sub, dateField) => sub[dateField] && new Date(sub[dateField]).getFullYear();
@@ -475,16 +482,20 @@ function Dashboard(){
   const barC = t => t==="anterior"?T.gray:t==="faturada"?T.primary:t==="contratada"?T.blue:T.lime;
 
   // ── G5 Receita Potencial (sem filtro de data) ───────────────────
-  const conqs    = PIPE.filter(p=>p.etapa==="Conquistado");
+  const conqsAll = PIPE.filter(p=>p.etapa==="Conquistado");
+  const conqs    = conqsAll.filter(p=>!g5Hidden.includes(p.el));
   const totConqs = conqs.reduce((s,p)=>s+p.fee,0);
-  const g5Data   = [
-    ...conqs.sort((a,b)=>a.fee-b.fee).map(p=>({
-      origName:p.el, name:g5Labels[p.el]||p.el,
-      v:+(p.fee/1000).toFixed(2), fase:phases[p.el]||"Roadshow"
-    })),
-    {origName:"Receita Potencial",name:"Rec. Potencial",v:+(totConqs/1000).toFixed(2),fase:"__total__"},
-  ];
-  const g5Orig = conqs.map(p=>p.el);
+  // Agrupar por fase (igual G3 agrupa por prioridade)
+  const g5Grp = {};
+  PHASES.forEach(ph=>g5Grp[ph]=[]);
+  conqs.forEach(p=>{ const ph=phases[p.el]||"Roadshow"; (g5Grp[ph]||g5Grp["Roadshow"]).push(p); });
+  const g5Data = [];
+  PHASES.forEach(ph=>{
+    g5Grp[ph].sort((a,b)=>b.fee-a.fee).forEach(p=>
+      g5Data.push({origName:p.el,name:g5Labels[p.el]||p.el,v:+(p.fee/1000).toFixed(2),fase:ph}));
+  });
+  g5Data.push({origName:"Receita Potencial",name:"Rec. Potencial",v:+(totConqs/1000).toFixed(2),fase:"__total__"});
+  const g5Orig = conqsAll.map(p=>p.el);
 
   const funil = [
     {label:"Leads Novos",       val:leadsM,bg:T.grayLt,color:T.grayLt,real:leadsY,id:"leads",goal:goals.leads},
@@ -492,12 +503,20 @@ function Dashboard(){
     {label:"Mandatos Assinados",val:mandM, bg:T.primary,color:T.primary,real:mandY,id:"mand",goal:goals.mand},
   ];
 
-  const EditBtn = (active,onClick) => (
-    <button onClick={onClick} style={{background:"none",border:`1px solid ${T.primary}`,
-      borderRadius:5,fontSize:9,color:T.primary,padding:"2px 8px",cursor:"pointer",
-      fontFamily:"Montserrat",fontWeight:600}}>
-      {active?"✓ Fechar":"✎ Labels"}
-    </button>
+  const EditBtn = (activeLabel, onClickLabel, activeFilter, onClickFilter) => (
+    <div style={{display:"flex",gap:4}}>
+      <button onClick={onClickFilter} style={{background:activeFilter?T.primary:"none",
+        border:`1px solid ${T.primary}`,borderRadius:5,fontSize:9,
+        color:activeFilter?"white":T.primary,padding:"2px 8px",cursor:"pointer",
+        fontFamily:"Montserrat",fontWeight:600}}>
+        {activeFilter?"✓ Filtro":"⊟ Filtro"}
+      </button>
+      <button onClick={onClickLabel} style={{background:"none",border:`1px solid ${T.primary}`,
+        borderRadius:5,fontSize:9,color:T.primary,padding:"2px 8px",cursor:"pointer",
+        fontFamily:"Montserrat",fontWeight:600}}>
+        {activeLabel?"✓ Fechar":"✎ Labels"}
+      </button>
+    </div>
   );
 
   const SEL = {fontFamily:"Montserrat",fontSize:11,fontWeight:600,padding:"6px 10px",
@@ -563,10 +582,10 @@ function Dashboard(){
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {funil.map((item,i)=>(
                 <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
-                  <div style={{flex:1,marginLeft:i*13,marginRight:i*8}}>
+                  <div style={{flex:1,marginLeft:i*8,marginRight:i*5}}>
                     <div style={{background:item.bg,borderRadius:7,padding:"13px 14px",
                       display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:62}}>
-                      <span style={{color:"#fff",fontSize:10,fontWeight:600}}>{item.label}</span>
+                      <span style={{color:"#fff",fontSize:12,fontWeight:600}}>{item.label}</span>
                       <span style={{color:"#fff",fontSize:22,fontWeight:800,lineHeight:1}}>{item.val}</span>
                     </div>
                   </div>
@@ -580,32 +599,52 @@ function Dashboard(){
 
           {/* G3 PROPOSTAS */}
           <Card>
-            <STitle extra={EditBtn(editG3,()=>setEditG3(!editG3))}>Valor por Proposta (BRL K)</STitle>
+            <STitle extra={EditBtn(editG3,()=>setEditG3(!editG3),editG3Filter,()=>setEditG3Filter(!editG3Filter))}>Valor por Proposta (BRL K)</STitle>
             <div style={{display:"flex",gap:10,marginBottom:10,padding:"7px 10px",
               background:T.bg,borderRadius:8,flexWrap:"wrap",alignItems:"center"}}>
               {g3Sum.filter(s=>s.tot>0).map(({pr,tot,pct})=>(
                 <div key={pr} style={{display:"flex",alignItems:"center",gap:5}}>
                   <div style={{width:7,height:7,borderRadius:2,background:PRIO_C[pr]}}/>
                   <span style={{fontSize:9,fontWeight:700,color:PRIO_C[pr]}}>{pr}:</span>
-                  <span style={{fontSize:9,color:T.muted}}>R${fBRL(tot/1000)}</span>
+                  <span style={{fontSize:9,color:T.muted}}>{fBRL(tot/1000)}</span>
                   <span style={{fontSize:8,color:T.muted,background:"#E5E7EB",borderRadius:10,
                     padding:"1px 5px",fontWeight:600}}>{pct}%</span>
                 </div>
               ))}
               <span style={{marginLeft:"auto",fontSize:9,fontWeight:700,color:T.txt}}>
-                Total: R${fBRL(totProp/1000)}
+                Total: {fBRL(totProp/1000)}
               </span>
             </div>
+            {editG3Filter&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,padding:"8px 10px",
+                background:T.bg,borderRadius:8,border:`1px solid ${T.primary}40`}}>
+                {g3Orig.map(el=>{
+                  const hidden=g3Hidden.includes(el);
+                  return <button key={el} onClick={()=>setG3Hidden(h=>hidden?h.filter(x=>x!==el):[...h,el])}
+                    style={{padding:"3px 10px",borderRadius:20,fontSize:9,fontWeight:600,cursor:"pointer",
+                      border:`1px solid ${hidden?T.grayLt:T.primary}`,fontFamily:"Montserrat",
+                      background:hidden?"#F0F0F0":"white",color:hidden?T.muted:T.primary,
+                      textDecoration:hidden?"line-through":"none"}}>
+                    {g3Labels[el]||el}
+                  </button>;
+                })}
+                <button onClick={()=>setG3Hidden([])}
+                  style={{padding:"3px 10px",borderRadius:20,fontSize:9,cursor:"pointer",
+                    border:"none",background:T.lime,color:"#1E2330",fontFamily:"Montserrat",fontWeight:700}}>
+                  Mostrar todos
+                </button>
+              </div>
+            )}
             <ResponsiveContainer width="100%" height={185}>
               <BarChart data={g3Data} margin={{top:16,right:6,left:0,bottom:44}}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false}/>
-                <XAxis dataKey="name" tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}}
+                <XAxis dataKey="name" tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}
                   angle={-40} textAnchor="end" interval={0} height={52}/>
-                <YAxis tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
-                <Tooltip formatter={v=>[`R$ ${fBRL(v)}`,"Fee Potencial"]} contentStyle={TTS}/>
+                <YAxis tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
+                <Tooltip formatter={v=>[fBRL(v),"Fee Potencial"]} contentStyle={TTS}/>
                 <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={30}>
                   <LabelList dataKey="v" position="top" formatter={v=>fBRL(v)}
-                    style={{fontSize:10,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                    style={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}/>
                   {g3Data.map((d,i)=><Cell key={i} fill={d.prio==="__total__"?T.lime:(PRIO_C[d.prio]||T.gray)}/>)}
                 </Bar>
               </BarChart>
@@ -631,7 +670,7 @@ function Dashboard(){
                     <Tooltip formatter={v=>[v,"Leads"]} contentStyle={TTS}/>
                     <Bar dataKey="v" fill={T.primary} radius={[0,4,4,0]} maxBarSize={18}>
                       <LabelList dataKey="v" position="right"
-                        style={{fontSize:12,fontFamily:"Montserrat",fill:T.dkGray,fontWeight:700}}/>
+                        style={{fontSize:10,fontFamily:"Montserrat",fill:T.gray,fontWeight:700}}/>
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -651,7 +690,7 @@ function Dashboard(){
                     <Tooltip formatter={v=>[v,"Leads"]} contentStyle={TTS}/>
                     <Bar dataKey="v" fill={T.blue} radius={[0,4,4,0]} maxBarSize={18}>
                       <LabelList dataKey="v" position="right"
-                        style={{fontSize:12,fontFamily:"Montserrat",fill:T.dkGray,fontWeight:700}}/>
+                        style={{fontSize:10,fontFamily:"Montserrat",fill:T.gray,fontWeight:700}}/>
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -666,8 +705,8 @@ function Dashboard(){
           <ResponsiveContainer width="100%" height={215} style={{marginTop:8}}>
             <BarChart data={g4Data} margin={{top:18,right:6,left:2,bottom:4}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false}/>
-              <XAxis dataKey="name" tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}}/>
-              <YAxis tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
+              <XAxis dataKey="name" tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}/>
+              <YAxis tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
               <Tooltip formatter={(v,_,p)=>[`R$ ${fBRL(v)}`,
                 p.payload.tipo==="anterior"?`Total ${yr-1}`:
                 p.payload.tipo==="faturada"?"Faturada":
@@ -675,7 +714,7 @@ function Dashboard(){
                 contentStyle={TTS}/>
               <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={34}>
                 <LabelList dataKey="v" position="top" formatter={v=>v>0?fBRL(v):""}
-                  style={{fontSize:10,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                  style={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}/>
                 {g4Data.map((d,i)=><Cell key={i} fill={barC(d.tipo)}/>)}
               </Bar>
             </BarChart>
@@ -684,25 +723,45 @@ function Dashboard(){
 
         {/* ROW 4 — Potencial */}
         <Card>
-          <STitle extra={EditBtn(editG5,()=>setEditG5(!editG5))}>
+          <STitle extra={EditBtn(editG5,()=>setEditG5(!editG5),editG5Filter,()=>setEditG5Filter(!editG5Filter))}>
             Receita Potencial por Mandato (BRL K) · Conquistados
           </STitle>
           <div style={{fontSize:10,color:T.muted,marginBottom:8}}>
             💡 Clique numa barra para definir a fase do mandato
           </div>
+          {editG5Filter&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,padding:"8px 10px",
+              background:T.bg,borderRadius:8,border:`1px solid ${T.primary}40`}}>
+              {g5Orig.map(el=>{
+                const hidden=g5Hidden.includes(el);
+                return <button key={el} onClick={()=>setG5Hidden(h=>hidden?h.filter(x=>x!==el):[...h,el])}
+                  style={{padding:"3px 10px",borderRadius:20,fontSize:9,fontWeight:600,cursor:"pointer",
+                    border:`1px solid ${hidden?T.grayLt:T.primary}`,fontFamily:"Montserrat",
+                    background:hidden?"#F0F0F0":"white",color:hidden?T.muted:T.primary,
+                    textDecoration:hidden?"line-through":"none"}}>
+                  {g5Labels[el]||el}
+                </button>;
+              })}
+              <button onClick={()=>setG5Hidden([])}
+                style={{padding:"3px 10px",borderRadius:20,fontSize:9,cursor:"pointer",
+                  border:"none",background:T.lime,color:"#1E2330",fontFamily:"Montserrat",fontWeight:700}}>
+                Mostrar todos
+              </button>
+            </div>
+          )}
           <ResponsiveContainer width="100%" height={235}>
             <BarChart data={g5Data} margin={{top:18,right:6,left:2,bottom:44}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false}/>
-              <XAxis dataKey="name" tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}}
+              <XAxis dataKey="name" tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}
                 angle={-35} textAnchor="end" interval={0} height={52}/>
-              <YAxis tick={{fontSize:9,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
+              <YAxis tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}} tickFormatter={fAxis} width={46}/>
               <Tooltip formatter={(v,_,p)=>[`R$ ${fBRL(v)}`,
                 p.payload.fase==="__total__"?"Total Potencial":p.payload.fase]}
                 contentStyle={TTS}/>
               <Bar dataKey="v" radius={[4,4,0,0]} maxBarSize={42}
                 onClick={d=>{ if(d&&d.fase!=="__total__") setSelPhase(selPhase===d.origName?null:d.origName); }}>
                 <LabelList dataKey="v" position="top" formatter={v=>fBRL(v)}
-                  style={{fontSize:10,fontFamily:"Montserrat",fill:T.dkGray}}/>
+                  style={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}/>
                 {g5Data.map((d,i)=>(
                   <Cell key={i} fill={d.fase==="__total__"?T.lime:(PHASE_C[d.fase]||T.gray)}
                     cursor={d.fase!=="__total__"?"pointer":"default"}
