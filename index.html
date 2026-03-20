@@ -51,29 +51,43 @@ async function mondayFetch(query) {
 async function fetchAllItems(boardId, withSubitems = false) {
   const items = [];
   let cursor = null;
+  let colMap = null;
   const subFrag = withSubitems
-    ? `subitems { id name column_values { id title text value } }`
+    ? `subitems { id name column_values { id text value type } }`
     : "";
   do {
     const cursorArg = cursor ? `, cursor: "${cursor}"` : "";
+    const colsFrag = colMap ? "" : "columns { id title }";
     const q = `query {
       boards(ids: [${boardId}]) {
+        ${colsFrag}
         items_page(limit: 500${cursorArg}) {
           cursor
           items {
             id name
             group { id title }
-            column_values { id title text value }
+            column_values { id text value type }
             ${subFrag}
           }
         }
       }
     }`;
     const data = await mondayFetch(q);
-    const page = data.boards[0].items_page;
+    const board = data.boards[0];
+    if (!colMap) {
+      colMap = {};
+      (board.columns || []).forEach(c => { colMap[c.id] = c.title; });
+    }
+    const page = board.items_page;
     items.push(...page.items);
     cursor = page.cursor || null;
   } while (cursor);
+  items.forEach(item => {
+    item.column_values.forEach(cv => { cv.title = colMap[cv.id] || cv.id; });
+    (item.subitems || []).forEach(sub => {
+      sub.column_values.forEach(cv => { cv.title = colMap[cv.id] || cv.id; });
+    });
+  });
   return items;
 }
 
