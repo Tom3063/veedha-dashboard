@@ -23,7 +23,7 @@
 // ════════════════════════════════════════════════════════════════════
 //  API KEY — substitua pelo seu token Monday.com quando necessário
 // ════════════════════════════════════════════════════════════════════
-const MONDAY_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzNTkxNDIwOCwiYWFpIjoxMSwidWlkIjo0OTU2ODIxMywiaWFkIjoiMjAyNi0wMy0yMFQyMToxMzo0OC44ODFaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY1NDUwNTIsInJnbiI6InVzZTEifQ.8rvEwvEBOEtbmqfbW2GQgvmHbAmKQ4v9lmKgo2vxJ8A";
+const MONDAY_API_KEY = "eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjYzNTkxNDIwOCwiYWFpIjoxMSwidWlkIjo0OTU2ODIxMywiaWFkIjoiMjAyNi0wMy0yMFQyMToxMzo0OC4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6MTY1NDUwNTIsInJnbiI6InVzZTEifQ.XApkJLy0qQwpMeoPXu3CIkeBIynAFOTt_H3qVlecev0";
 // ════════════════════════════════════════════════════════════════════
 
 // ── Board IDs (hardcoded para fiabilidade) ────────────────────────
@@ -92,8 +92,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
     });
     if (resp.status === 429) {
       if (attempt >= 4) throw new Error("Rate limit excedido. Aguarde 1 minuto e tente novamente.");
-      const wait = (attempt + 1) * 3000; // 3s, 6s, 9s, 12s
-      await new Promise(r => setTimeout(r, wait));
+      await new Promise(r => setTimeout(r, (attempt + 1) * 3000));
       return doFetch(q, attempt + 1);
     }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -104,6 +103,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
 
   do {
     const cursorArg = cursor ? `, cursor: "${cursor}"` : "";
+    // Query simples sem inline fragments — muito mais leve
     const q = `query {
       boards(ids: [${boardId}]) {
         items_page(limit: 200${cursorArg}) {
@@ -111,10 +111,7 @@ async function fetchAllItems(boardId, withSubitems = false) {
           items {
             id name
             group { id title }
-            column_values {
-              id text value type
-              ... on BoardRelationValue { linked_items { id name } }
-            }
+            column_values { id text value type }
             ${subFrag}
           }
         }
@@ -124,10 +121,45 @@ async function fetchAllItems(boardId, withSubitems = false) {
     const page = json.data.boards[0].items_page;
     items.push(...page.items);
     cursor = page.cursor || null;
-    // Pequena pausa entre páginas para evitar rate limit
-    if (cursor) await new Promise(r => setTimeout(r, 500));
+    if (cursor) await new Promise(r => setTimeout(r, 300));
   } while (cursor);
   return items;
+}
+
+// Query separada e leve para resolver linked_items do conectar_quadros
+async function fetchOrigLinks(itemIds) {
+  if (!itemIds.length) return {};
+  const map = {};
+  // Processar em lotes de 100
+  for (let i = 0; i < itemIds.length; i += 100) {
+    const batch = itemIds.slice(i, i + 100);
+    const q = `query {
+      items(ids: [${batch.join(",")}]) {
+        id
+        column_values(ids: ["conectar_quadros"]) {
+          ... on BoardRelationValue { linked_items { id name } }
+        }
+      }
+    }`;
+    const resp = await fetch("https://api.monday.com/v2", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": MONDAY_API_KEY,
+        "API-Version": "2023-10",
+      },
+      body: JSON.stringify({ query: q }),
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      (json.data?.items || []).forEach(item => {
+        const li = item.column_values?.[0]?.linked_items;
+        if (li?.length) map[item.id] = li[0].name;
+      });
+    }
+    if (i + 100 < itemIds.length) await new Promise(r => setTimeout(r, 500));
+  }
+  return map;
 }
 
 // ── Helpers de coluna ─────────────────────────────────────────────
@@ -156,10 +188,14 @@ async function fetchDashboardData() {
 
   // Fetch sequencial para evitar rate limit (429)
   const pipeItems = await fetchAllItems(pipeId, false);
-  await new Promise(r => setTimeout(r, 500));
+  await new Promise(r => setTimeout(r, 300));
   const contItems = await fetchAllItems(contId, false);
-  await new Promise(r => setTimeout(r, 500));
+  await new Promise(r => setTimeout(r, 300));
   const finItems  = await fetchAllItems(finId,  true);
+  await new Promise(r => setTimeout(r, 300));
+
+  // Buscar originação separadamente (linked_items do conectar_quadros)
+  const origMap = await fetchOrigLinks(pipeItems.map(i => i.id));
 
   // ── Process Contacts → mapas por ID e por nome ─────────────────
   // Tem de ser feito ANTES do Pipeline para resolver board_relation
@@ -189,12 +225,8 @@ async function fetchDashboardData() {
       let fee = (feeSucesso / 100) * chequeEstimado;
       if (grossUp === "Sim" && fee > 0) fee = fee / 0.8885;
 
-      // Originação — usar linked_items do inline fragment BoardRelationValue
-      let orig = "";
-      const origCol = cv.find(x => x.id === "conectar_quadros");
-      if (origCol?.linked_items?.length > 0) {
-        orig = origCol.linked_items[0].name || "";
-      }
+      // Originação — resolvida via origMap (query separada para linked_items)
+      const orig = origMap[item.id] || "";
 
       return {
         el:    item.name,
