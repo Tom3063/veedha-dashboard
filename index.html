@@ -468,7 +468,8 @@ function Dashboard(){
   const mandY  = PIPE.filter(p=>valid(p)&&uptomo(p.ap)).length;
 
   // ── G2 KPIs Leads ───────────────────────────────────────────────
-  const leadsYr = PIPE.filter(p=>valid(p)&&my(p.pr,yr));
+  // Acumulado Jan → mês do filtro (mesma lógica dos donuts)
+  const leadsYr = PIPE.filter(p=>valid(p)&&uptomo(p.pr));
   const byOrig={}, byFil={};
   leadsYr.forEach(p=>{
     const origKey = p.orig || null;
@@ -483,13 +484,14 @@ function Dashboard(){
 
   // ── G3 Valor por Proposta (sem filtro de data) ──────────────────
   const propItems = PIPE.filter(p=>p.etapa==="Proposta"&&p.fee>0&&!g3Hidden.includes(p.el));
-  const propAll   = PIPE.filter(p=>p.etapa==="Proposta"&&p.fee>0); // para toggle list
+  const propAll   = PIPE.filter(p=>p.etapa==="Proposta"&&p.fee>0);
   const totProp   = propItems.reduce((s,p)=>s+p.fee,0);
   const g3Grp     = {Alta:[],Média:[],Baixa:[]};
   propItems.forEach(p=>g3Grp[p.prio]?.push(p));
+  const sortFeeAlpha = (a,b) => b.fee!==a.fee ? b.fee-a.fee : a.el.localeCompare(b.el,"pt-BR");
   const g3Data = [];
   ["Alta","Média","Baixa"].forEach(pr=>{
-    g3Grp[pr].sort((a,b)=>b.fee-a.fee).forEach(p=>
+    g3Grp[pr].sort(sortFeeAlpha).forEach(p=>
       g3Data.push({origName:p.el,name:g3Labels[p.el]||p.el,v:+(p.fee/1000).toFixed(2),prio:pr}));
   });
   g3Data.push({origName:"Total",name:"Total",v:+(totProp/1000).toFixed(2),prio:"__total__"});
@@ -536,7 +538,7 @@ function Dashboard(){
   conqs.forEach(p=>{ const ph=phases[p.el]||"Roadshow"; (g5Grp[ph]||g5Grp["Roadshow"]).push(p); });
   const g5Data = [];
   PHASES.forEach(ph=>{
-    g5Grp[ph].sort((a,b)=>b.fee-a.fee).forEach(p=>
+    g5Grp[ph].sort(sortFeeAlpha).forEach(p=>
       g5Data.push({origName:p.el,name:g5Labels[p.el]||p.el,v:+(p.fee/1000).toFixed(2),fase:ph}));
   });
   g5Data.push({origName:"Receita Potencial",name:"Rec. Potencial",v:+(totConqs/1000).toFixed(2),fase:"__total__"});
@@ -680,8 +682,8 @@ function Dashboard(){
                 </button>
               </div>
             )}
-            <ResponsiveContainer width="100%" height={185}>
-              <BarChart data={g3Data} margin={{top:16,right:6,left:0,bottom:44}}>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={g3Data} margin={{top:16,right:6,left:0,bottom:36}}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false}/>
                 <XAxis dataKey="name" tick={{fontSize:10,fontFamily:"Montserrat",fill:T.gray}}
                   angle={-40} textAnchor="end" interval={0} height={52}/>
